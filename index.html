@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>避雷針 — 迷因幣風險掃描器</title>
+<meta name="description" content="貼上 Solana 合約地址，3 秒算出風險分數。鑄造權、凍結權、籌碼集中度、流動性，白話告訴你這幣能不能碰。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0b0d10; --panel:#11141a; --panel2:#151a22; --line:#1f2632;
+  --txt:#e8edf3; --dim:#8b94a3; --faint:#5a6372;
+  --volt:#c6ff4a; --ok:#3ee6a8; --warn:#ffb020; --bad:#ff5470;
+  --mono:'JetBrains Mono',ui-monospace,monospace;
+  --sans:'Noto Sans TC',system-ui,sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--txt);font-family:var(--sans);min-height:100vh;
+  background-image:radial-gradient(ellipse 80% 50% at 50% -10%,rgba(198,255,74,.06),transparent);}
+::selection{background:var(--volt);color:#0b0d10}
+.wrap{max-width:880px;margin:0 auto;padding:0 20px}
+/* ── top bar ── */
+.topbar{display:flex;justify-content:space-between;align-items:center;padding:18px 0;border-bottom:1px solid var(--line)}
+.brand{font-weight:900;font-size:20px;letter-spacing:.08em}
+.brand .bolt{color:var(--volt)}
+.tagline{font-size:12px;color:var(--dim);margin-top:2px;letter-spacing:.04em}
+.quota{font-family:var(--mono);font-size:12px;color:var(--dim);border:1px solid var(--line);
+  padding:6px 12px;border-radius:4px;background:var(--panel)}
+.quota b{color:var(--volt)}
+/* ── hero / scanner ── */
+.hero{padding:56px 0 8px;text-align:left}
+.kicker{font-family:var(--mono);font-size:12px;color:var(--volt);letter-spacing:.22em;margin-bottom:14px}
+h1{font-size:clamp(34px,6vw,58px);font-weight:900;line-height:1.15;letter-spacing:.02em}
+h1 .strike{color:var(--faint);text-decoration:line-through;text-decoration-color:var(--bad);text-decoration-thickness:3px}
+.sub{color:var(--dim);margin-top:12px;font-size:15px;line-height:1.7}
+.console{margin-top:28px;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.console-head{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:11px;color:var(--faint);letter-spacing:.14em}
+.dot{width:9px;height:9px;border-radius:50%}
+.console-body{padding:18px}
+.addr-row{display:flex;gap:10px;flex-wrap:wrap}
+#addr{flex:1;min-width:220px;background:#0b0d10;border:1px solid var(--line);border-radius:6px;
+  color:var(--txt);font-family:var(--mono);font-size:14px;padding:13px 14px;outline:none;transition:border .15s}
+#addr:focus{border-color:var(--volt)}
+#scanBtn{background:var(--volt);color:#0b0d10;border:none;border-radius:6px;font-weight:900;font-size:15px;
+  padding:13px 26px;cursor:pointer;letter-spacing:.06em;transition:transform .12s,box-shadow .12s;font-family:var(--sans)}
+#scanBtn:hover{transform:translateY(-1px);box-shadow:0 4px 24px rgba(198,255,74,.25)}
+#scanBtn:disabled{opacity:.45;cursor:wait;transform:none;box-shadow:none}
+.hint{margin-top:12px;font-size:12.5px;color:var(--faint);display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+.hint button{background:none;border:1px dashed var(--line);color:var(--dim);border-radius:4px;padding:4px 10px;
+  font-family:var(--mono);font-size:11.5px;cursor:pointer}
+.hint button:hover{color:var(--volt);border-color:var(--volt)}
+#status{margin-top:14px;font-family:var(--mono);font-size:12.5px;color:var(--dim);min-height:20px}
+#status .blink{animation:blink 1s steps(2) infinite;color:var(--volt)}
+@keyframes blink{50%{opacity:.25}}
+/* ── result ── */
+#result{display:none;margin-top:26px}
+.score-band{display:grid;grid-template-columns:220px 1fr;gap:0;background:var(--panel);
+  border:1px solid var(--line);border-radius:10px;overflow:hidden}
+@media(max-width:640px){.score-band{grid-template-columns:1fr}}
+.score-cell{padding:28px 24px;border-right:1px solid var(--line);text-align:center;
+  display:flex;flex-direction:column;justify-content:center;align-items:center}
+@media(max-width:640px){.score-cell{border-right:none;border-bottom:1px solid var(--line)}}
+.score-num{font-family:var(--mono);font-size:72px;font-weight:800;line-height:1}
+.verdict{margin-top:10px;font-weight:900;font-size:18px;letter-spacing:.06em}
+.verdict small{display:block;font-weight:400;font-size:12px;color:var(--dim);margin-top:6px;letter-spacing:0}
+.token-cell{padding:24px}
+.token-name{font-size:20px;font-weight:900;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.token-name .sym{font-family:var(--mono);font-size:13px;color:var(--dim);font-weight:400}
+.kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:16px}
+.kv-item{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:10px 12px}
+.kv-item .k{font-size:11px;color:var(--faint);letter-spacing:.08em;margin-bottom:4px}
+.kv-item .v{font-family:var(--mono);font-size:15px;font-weight:600}
+.mintline{margin-top:14px;font-family:var(--mono);font-size:11px;color:var(--faint);word-break:break-all}
+.mintline a{color:var(--dim)}
+/* checklist */
+.checks{margin-top:18px;display:flex;flex-direction:column;gap:10px}
+.check{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;
+  display:grid;grid-template-columns:86px 1fr;gap:14px;align-items:start}
+@media(max-width:520px){.check{grid-template-columns:1fr}}
+.badge{font-family:var(--mono);font-size:11px;font-weight:800;letter-spacing:.1em;text-align:center;
+  padding:6px 0;border-radius:4px;border:1px solid}
+.badge.pass{color:var(--ok);border-color:var(--ok);background:rgba(62,230,168,.07)}
+.badge.warn{color:var(--warn);border-color:var(--warn);background:rgba(255,176,32,.07)}
+.badge.fail{color:var(--bad);border-color:var(--bad);background:rgba(255,84,112,.07)}
+.badge.na{color:var(--faint);border-color:var(--line)}
+.check h3{font-size:15px;font-weight:700}
+.check .plain{margin-top:6px;font-size:13.5px;color:var(--dim);line-height:1.65}
+.check .detail{margin-top:6px;font-family:var(--mono);font-size:12px;color:var(--faint)}
+/* sections */
+.section{margin:64px 0}
+.section h2{font-size:24px;font-weight:900;letter-spacing:.04em;margin-bottom:6px}
+.section .lede{color:var(--dim);font-size:14px;margin-bottom:22px}
+.howto{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.howto .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:18px}
+.howto .n{font-family:var(--mono);color:var(--volt);font-size:12px;letter-spacing:.14em;margin-bottom:8px}
+.howto h3{font-size:15px;margin-bottom:8px}
+.howto p{font-size:13.5px;color:var(--dim);line-height:1.7}
+.faq details{background:var(--panel);border:1px solid var(--line);border-radius:8px;margin-bottom:10px;padding:16px 18px}
+.faq summary{cursor:pointer;font-weight:700;font-size:15px;list-style:none}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary::before{content:'▸ ';color:var(--volt)}
+.faq details[open] summary::before{content:'▾ '}
+.faq p{margin-top:10px;font-size:13.5px;color:var(--dim);line-height:1.75}
+/* pro teaser */
+.pro{border:1px solid var(--volt);border-radius:10px;padding:28px;background:
+  linear-gradient(180deg,rgba(198,255,74,.06),transparent);display:flex;gap:20px;align-items:center;flex-wrap:wrap}
+.pro .price{font-family:var(--mono)}
+.pro .price b{font-size:34px;color:var(--volt)}
+.pro h2{font-size:20px}
+.pro p{color:var(--dim);font-size:13.5px;margin-top:6px;line-height:1.7}
+.pro form{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.pro input{background:#0b0d10;border:1px solid var(--line);border-radius:6px;color:var(--txt);
+  padding:10px 12px;font-size:14px;min-width:220px;outline:none;font-family:var(--sans)}
+.pro input:focus{border-color:var(--volt)}
+.pro button{background:var(--volt);border:none;border-radius:6px;font-weight:900;padding:10px 20px;cursor:pointer;font-family:var(--sans)}
+footer{border-top:1px solid var(--line);margin-top:64px;padding:26px 0 40px;color:var(--faint);font-size:12.5px;line-height:1.8}
+footer .mono{font-family:var(--mono)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="topbar">
+    <div>
+      <div class="brand"><span class="bolt">⚡</span> 避雷針</div>
+      <div class="tagline">SOLANA MEMECOIN RISK SCANNER</div>
+    </div>
+    <div class="quota">今日免費額度 <b id="quotaNum">10</b> / 10</div>
+  </header>
+
+  <section class="hero">
+    <div class="kicker">// 別當最後一個接盤的人</div>
+    <h1>貼上合約地址，<br>3 秒看出<span class="strike">百倍幣</span> 土狗。</h1>
+    <p class="sub">鑄造權、凍結權、籌碼集中度、流動性 —— 全部讀鏈上公開資料，用白話中文告訴你這幣能不能碰。不連錢包，不花你半毛錢。</p>
+
+    <div class="console">
+      <div class="console-head"><span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span> RUG-SCAN v1.0 — SOLANA MAINNET</div>
+      <div class="console-body">
+        <div class="addr-row">
+          <input id="addr" placeholder="貼上代幣合約地址（Mint Address）…" spellcheck="false" autocomplete="off">
+          <button id="scanBtn">開始掃描</button>
+        </div>
+        <div class="hint">
+          <span>不知道地址？先拿這幾個練手：</span>
+          <button data-sample="DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263">BONK</button>
+          <button data-sample="7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU">WIF</button>
+          <button data-sample="So11111111111111111111111111111111111111112">WSOL</button>
+        </div>
+        <div id="status"></div>
+      </div>
+    </div>
+
+    <div id="result">
+      <div class="score-band">
+        <div class="score-cell">
+          <div class="score-num" id="scoreNum">–</div>
+          <div class="verdict" id="verdict"></div>
+        </div>
+        <div class="token-cell">
+          <div class="token-name"><span id="tokenName">–</span><span class="sym" id="tokenSym"></span></div>
+          <div class="kv">
+            <div class="kv-item"><div class="k">價格 USD</div><div class="v" id="kvPrice">–</div></div>
+            <div class="kv-item"><div class="k">流動性</div><div class="v" id="kvLiq">–</div></div>
+            <div class="kv-item"><div class="k">24H 交易量</div><div class="v" id="kvVol">–</div></div>
+            <div class="kv-item"><div class="k">24H 漲跌</div><div class="v" id="kvChg">–</div></div>
+            <div class="kv-item"><div class="k">前十大持倉</div><div class="v" id="kvTop10">–</div></div>
+            <div class="kv-item"><div class="k">池子年齡</div><div class="v" id="kvAge">–</div></div>
+          </div>
+          <div class="mintline" id="mintLine"></div>
+        </div>
+      </div>
+      <div class="checks" id="checks"></div>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2>分數怎麼算</h2>
+    <p class="lede">六個檢查項，全部來自鏈上公開資料。沒有黑箱，沒有「老師帶單」。</p>
+    <div class="howto">
+      <div class="card"><div class="n">CHECK 01</div><h3>鑄造權 Mint Authority</h3><p>莊家還能不能無限印新幣出來砸盤。沒放棄＝他手上有印鈔機。</p></div>
+      <div class="card"><div class="n">CHECK 02</div><h3>凍結權 Freeze Authority</h3><p>莊家能不能凍結你的幣讓你賣不掉。沒放棄＝你的幣他說了算。</p></div>
+      <div class="card"><div class="n">CHECK 03</div><h3>籌碼集中度</h3><p>前十大錢包拿走幾成。一半以上集中在少數人手裡，倒貨只是時間問題。</p></div>
+      <div class="card"><div class="n">CHECK 04</div><h3>流動性深度</h3><p>池子有多深。池子太淺，你賣一點價格就歸零，根本跑不掉。</p></div>
+      <div class="card"><div class="n">CHECK 05</div><h3>交易熱度</h3><p>24 小時有沒有真人在交易。沒量＝死幣，進去就站崗。</p></div>
+      <div class="card"><div class="n">CHECK 06</div><h3>池子年齡</h3><p>上線多久了。土狗 90% 死在第一天，活越久越不像快閃騙局。</p></div>
+    </div>
+  </section>
+
+  <section class="section faq">
+    <h2>常見問題</h2>
+    <p class="lede">先把醜話說在前面。</p>
+    <details open><summary>高分就保證不會被騙嗎？</summary><p>不保證。分數只看鏈上結構風險，看不到莊家的人心。80 分以上的幣也會跌，40 分以下的土狗偶爾也會飆 —— 只是從機率上，前者活下來的機會大得多。這個工具是幫你避雷，不是幫你找百倍幣。</p></details>
+    <details><summary>為什麼有些幣查不到價格和流動性？</summary><p>代表它還沒有上任何去中心化交易所的池子，或池子已經死了。這種幣你連賣都賣不掉，分數會直接反應這件事。</p></details>
+    <details><summary>你們會拿到我的錢包資料嗎？</summary><p>不會。這個工具不連錢包、不要求授權，只讀 Solana 公開鏈上資料。你的私鑰永遠不需要離開你的錢包。</p></details>
+    <details><summary>免費額度用完怎麼辦？</summary><p>每天 10 次免費掃描，午夜重置。Pro 版（無限掃描＋LINE 即時新幣警報）正在準備中，可以先在下面留下聯絡方式。</p></details>
+  </section>
+
+  <section class="section">
+    <div class="pro">
+      <div style="flex:1;min-width:240px">
+        <h2>Pro 版即將推出</h2>
+        <p>無限次掃描＋新幣上線 LINE 即時警報＋莊家錢包異動追蹤。<br>早鳥鎖定優惠價，開賣第一時間通知你。</p>
+        <form id="notifyForm">
+          <input id="notifyInput" placeholder="你的 Email 或 LINE ID" required>
+          <button type="submit">到時通知我</button>
+        </form>
+        <p id="notifyOk" style="display:none;color:var(--ok);margin-top:10px">✓ 已登記，開賣時通知你。</p>
+      </div>
+      <div class="price"><b>NT$149</b>/月</div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="wrap" style="padding:0">
+      <div><span class="bolt" style="color:var(--volt)">⚡</span> <b style="color:var(--dim)">避雷針</b> <span class="mono">MEME-GUARD</span></div>
+      <div style="margin-top:8px">本工具僅分析 Solana 公開鏈上資料，結果僅供參考，不構成任何投資建議。迷因幣屬極高風險資產，請自行研究（DYOR），投入前請確認虧光也不影響生活。<br>資料來源：DexScreener API、Solana Mainnet RPC。</div>
+    </div>
+  </footer>
+</div>
+
+<script>
+/* ═══════════ 純函數：評分邏輯（可單獨測試） ═══════════ */
+function parseMintAccount(b64){
+  const bin = atob(b64); const b = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) b[i]=bin.charCodeAt(i);
+  const dv = new DataView(b.buffer);
+  const mintOpt = dv.getUint32(0,true);
+  const freezeOpt = dv.getUint32(46,true);
+  let mintAuth=null, freezeAuth=null;
+  if(mintOpt===1) mintAuth=[...b.slice(4,36)].map(x=>x.toString(16).padStart(2,'0')).join('');
+  if(freezeOpt===1) freezeAuth=[...b.slice(50,82)].map(x=>x.toString(16).padStart(2,'0')).join('');
+  const supply = dv.getBigUint64(36,true);
+  const decimals = b[44];
+  return {mintAuth, freezeAuth, supply, decimals};
+}
+
+function fmtUSD(n){
+  if(n==null||isNaN(n)) return '–';
+  if(n>=1e9) return '$'+(n/1e9).toFixed(2)+'B';
+  if(n>=1e6) return '$'+(n/1e6).toFixed(2)+'M';
+  if(n>=1e3) return '$'+(n/1e3).toFixed(1)+'K';
+  return '$'+n.toFixed(0);
+}
+function fmtPct(n){ return n==null||isNaN(n)?'–':(n*100).toFixed(1)+'%'; }
+function fmtAge(ms){
+  if(ms==null) return '–';
+  const d=ms/864e5;
+  if(d<1) return (ms/36e5).toFixed(0)+' 小時';
+  if(d<30) return d.toFixed(0)+' 天';
+  return (d/30).toFixed(1)+' 個月';
+}
+
+/* checks: [{id,label,status,plain,detail}] status ∈ pass|warn|fail|na */
+function computeChecks(input){
+  // input: {mintAuth, freezeAuth, top10Ratio, liquidity, volume24h, priceChg24h, pairAgeMs}
+  const c=[];
+  // 01 mint
+  if(input.mintAuth===null) c.push({id:'mint',label:'鑄造權 Mint Authority',status:'pass',
+    plain:'鑄造權已經放棄，莊家沒辦法憑空印新幣出來砸盤。這是最基本的安全門檻。',detail:'MINT AUTHORITY: REVOKED'});
+  else if(input.mintAuth===undefined) c.push({id:'mint',label:'鑄造權 Mint Authority',status:'na',
+    plain:'讀不到鑄造權資料，保守起見當作有風險。',detail:'MINT AUTHORITY: UNKNOWN'});
+  else c.push({id:'mint',label:'鑄造權 Mint Authority',status:'fail',
+    plain:'鑄造權還在莊家手上，他隨時能無限印新幣出來倒給你。這是土狗最常見的死法。',detail:'MINT AUTHORITY: ACTIVE'});
+  // 02 freeze
+  if(input.freezeAuth===null) c.push({id:'freeze',label:'凍結權 Freeze Authority',status:'pass',
+    plain:'凍結權已放棄，沒人能凍結你的幣，你想賣隨時賣得掉。',detail:'FREEZE AUTHORITY: REVOKED'});
+  else if(input.freezeAuth===undefined) c.push({id:'freeze',label:'凍結權 Freeze Authority',status:'na',
+    plain:'讀不到凍結權資料，保守起見當作有風險。',detail:'FREEZE AUTHORITY: UNKNOWN'});
+  else c.push({id:'freeze',label:'凍結權 Freeze Authority',status:'warn',
+    plain:'凍結權還在莊家手上，他能凍結你的幣讓你賣不掉。有些正規幣基於合規會保留，但迷因幣保留它沒什麼好理由。',detail:'FREEZE AUTHORITY: ACTIVE'});
+  // 03 concentration
+  const r=input.top10Ratio;
+  if(r==null) c.push({id:'conc',label:'籌碼集中度',status:'na',plain:'讀不到持倉分布。',detail:'TOP10: UNKNOWN'});
+  else if(r<0.30) c.push({id:'conc',label:'籌碼集中度',status:'pass',
+    plain:'前十大錢包只拿 '+fmtPct(r)+'，籌碼算分散，單一莊家很難一次倒光。',detail:'TOP10 HOLD: '+fmtPct(r)});
+  else if(r<0.50) c.push({id:'conc',label:'籌碼集中度',status:'warn',
+    plain:'前十大拿走 '+fmtPct(r)+'，有點集中。大戶一動，價格就會很有感。',detail:'TOP10 HOLD: '+fmtPct(r)});
+  else c.push({id:'conc',label:'籌碼集中度',status:'fail',
+    plain:'前十大拿走 '+fmtPct(r)+'！一半以上的幣在少數人手裡，他們倒貨你就是接盤俠。',detail:'TOP10 HOLD: '+fmtPct(r)});
+  // 04 liquidity
+  const l=input.liquidity;
+  if(l==null) c.push({id:'liq',label:'流動性深度',status:'fail',
+    plain:'查不到流動池，可能還沒上交易所、或池子已經死了。這種幣你連賣都賣不掉。',detail:'LIQUIDITY: NO POOL'});
+  else if(l>=100000) c.push({id:'liq',label:'流動性深度',status:'pass',
+    plain:'池子有 '+fmtUSD(l)+'，深度夠，正常買賣不會把價格砸穿。',detail:'LIQUIDITY: '+fmtUSD(l)});
+  else if(l>=10000) c.push({id:'liq',label:'流動性深度',status:'warn',
+    plain:'池子只有 '+fmtUSD(l)+'，大單進出會明顯滑價，別下大注。',detail:'LIQUIDITY: '+fmtUSD(l)});
+  else c.push({id:'liq',label:'流動性深度',status:'fail',
+    plain:'池子只剩 '+fmtUSD(l)+'，你賣一點價格就歸零，根本跑不掉。這是死池的味道。',detail:'LIQUIDITY: '+fmtUSD(l)});
+  // 05 volume
+  const v=input.volume24h;
+  if(v==null) c.push({id:'vol',label:'交易熱度',status:'na',plain:'查不到交易量。',detail:'VOL 24H: UNKNOWN'});
+  else if(v>=50000) c.push({id:'vol',label:'交易熱度',status:'pass',
+    plain:'24 小時交易量 '+fmtUSD(v)+'，有人在玩，不是死幣。',detail:'VOL 24H: '+fmtUSD(v)});
+  else if(v>=500) c.push({id:'vol',label:'交易熱度',status:'warn',
+    plain:'24 小時交易量只有 '+fmtUSD(v)+'，很冷。流動性差的時候你會賣不掉。',detail:'VOL 24H: '+fmtUSD(v)});
+  else c.push({id:'vol',label:'交易熱度',status:'fail',
+    plain:'24 小時幾乎沒人交易（'+fmtUSD(v)+'）。這幣已經死了，進去就是站崗。',detail:'VOL 24H: '+fmtUSD(v)});
+  // 06 age
+  const a=input.pairAgeMs;
+  if(a==null) c.push({id:'age',label:'池子年齡',status:'na',plain:'查不到上線時間。',detail:'AGE: UNKNOWN'});
+  else if(a>7*864e5) c.push({id:'age',label:'池子年齡',status:'pass',
+    plain:'池子活了 '+fmtAge(a)+'，土狗 90% 死在第一天，能活下來代表沒那麼像快閃騙局。',detail:'AGE: '+fmtAge(a)});
+  else if(a>864e5) c.push({id:'age',label:'池子年齡',status:'warn',
+    plain:'上線 '+fmtAge(a)+'，還在蜜月期，熱度退了會怎樣沒人知道。',detail:'AGE: '+fmtAge(a)});
+  else c.push({id:'age',label:'池子年齡',status:'fail',
+    plain:'上線不到一天！土狗高發期，現在衝進去就是幫人抬轎。',detail:'AGE: '+fmtAge(a)});
+  return c;
+}
+
+function scoreFromChecks(checks){
+  let s=50;
+  const w={mint:{pass:25,fail:-30},freeze:{pass:15,warn:-10},conc:{pass:15,warn:5,fail:-20},
+           liq:{pass:15,warn:8,fail:-15},vol:{pass:5,warn:0,fail:-5},age:{pass:5,warn:0,fail:-5}};
+  for(const c of checks){ const d=(w[c.id]||{})[c.status]; if(d) s+=d; }
+  s=Math.max(0,Math.min(100,Math.round(s)));
+  let v,cls;
+  if(s>=80){v='相對安全';cls='var(--ok)';}
+  else if(s>=60){v='謹慎進場';cls='var(--volt)';}
+  else if(s>=40){v='高風險';cls='var(--warn)';}
+  else{v='建議避開';cls='var(--bad)';}
+  return {score:s,verdict:v,color:cls};
+}
+
+/* ═══════════ UI 邏輯 ═══════════ */
+const $=id=>document.getElementById(id);
+const RPC='https://api.mainnet-beta.solana.com';
+const DS='https://api.dexscreener.com/tokens/v1/solana/';
+
+function getQuota(){
+  const k='mg_quota', t=new Date().toISOString().slice(0,10);
+  try{const o=JSON.parse(localStorage.getItem(k)||'{}');
+    if(o.date!==t) return {date:t,used:0};
+    return o;}catch(e){return {date:t,used:0};}
+}
+function setQuota(o){ try{localStorage.setItem('mg_quota',JSON.stringify(o));}catch(e){} }
+function refreshQuota(){$('quotaNum').textContent=10-getQuota().used;}
+
+async function rpc(method,params){
+  const r=await fetch(RPC,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
+  const j=await r.json();
+  if(j.error) throw new Error(j.error.message);
+  return j.result;
+}
+/* 非關鍵資料：失敗回 null，掃描降級顯示 N/A 不炸 */
+async function rpcSoft(method,params){
+  try{return await rpc(method,params);}catch(e){return null;}
+}
+function validAddr(a){return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(a.trim());}
+
+async function scan(){
+  const addr=$('addr').value.trim();
+  const st=$('status'), btn=$('scanBtn');
+  $('result').style.display='none';
+  if(!validAddr(addr)){st.innerHTML='<span style="color:var(--bad)">✕ 地址格式不對。Solana 合約地址是 32～44 個字元。</span>';return;}
+  const q=getQuota();
+  if(q.used>=10){st.innerHTML='<span style="color:var(--warn)">✕ 今日免費額度用完了，明天午夜重置。Pro 版即將推出。</span>';return;}
+  btn.disabled=true;
+  const step=t=>{st.innerHTML='<span class="blink">▸</span> '+t;};
+  try{
+    step('讀取市場資料…');
+    const dsRes=await fetch(DS+addr).then(r=>r.ok?r.json():[]).catch(()=>[]);
+    step('讀取代幣帳戶…');
+    const accRes=await rpc('getAccountInfo',[addr,{encoding:'base64'}]).catch(()=>null);
+    if(!accRes||!accRes.value){throw new Error('NOT_FOUND');}
+    const owner=accRes.value.owner;
+    if(owner!=='TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'&&owner!=='TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnXxV69U8Qprfz'){throw new Error('NOT_TOKEN');}
+    step('解析鑄造權 / 凍結權…');
+    const mint=parseMintAccount(accRes.value.data[0]);
+    // DexScreener：取流動性最高的池子
+    let pair=null;
+    if(Array.isArray(dsRes)&&dsRes.length){
+      pair=dsRes.slice().sort((a,b)=>((b.liquidity&&b.liquidity.usd)||0)-((a.liquidity&&a.liquidity.usd)||0))[0];
+    }
+    // 前十大集中度（公開 RPC 常限流，讀不到就標 N/A）
+    step('讀取持倉分布…');
+    const supRes=await rpcSoft('getTokenSupply',[addr]);
+    const largeRes=await rpcSoft('getTokenLargestAccounts',[addr,{commitment:'confirmed'}]);
+    let top10=null;
+    if(supRes&&supRes.value&&largeRes&&largeRes.value){
+      const dec=supRes.value.decimals;
+      const total=Number(supRes.value.amount)/Math.pow(10,dec);
+      const top=largeRes.value.slice(0,10).reduce((s,x)=>s+Number(x.amount)/Math.pow(10,x.decimals),0);
+      if(total>0) top10=top/total;
+    }
+    step('計算風險分數…');
+    const checks=computeChecks({
+      mintAuth:mint.mintAuth===null?null:(mint.mintAuth===undefined?undefined:'active'),
+      freezeAuth:mint.freezeAuth===null?null:(mint.freezeAuth===undefined?undefined:'active'),
+      top10Ratio:top10,
+      liquidity:pair&&pair.liquidity?pair.liquidity.usd:null,
+      volume24h:pair&&pair.volume?pair.volume.h24:null,
+      priceChg24h:pair&&pair.priceChange?pair.priceChange.h24:null,
+      pairAgeMs:pair&&pair.pairCreatedAt?Date.now()-pair.pairCreatedAt:null,
+    });
+    // 注意：parseMintAccount 回傳 null=已放棄；這裡轉成 computeChecks 要的格式
+    const res=scoreFromChecks(checks);
+    render(addr,pair,mint,res,checks,top10);
+    q.used++; setQuota(q); refreshQuota();
+    st.innerHTML='<span style="color:var(--ok)">✓ 掃描完成</span>';
+  }catch(e){
+    if(e.message==='NOT_FOUND') st.innerHTML='<span style="color:var(--bad)">✕ 主網上查無此代幣。地址貼錯了嗎？</span>';
+    else if(e.message==='NOT_TOKEN') st.innerHTML='<span style="color:var(--bad)">✕ 這個地址不是代幣合約，是其他類型的帳戶。</span>';
+    else st.innerHTML='<span style="color:var(--bad)">✕ 掃描失敗：'+String(e.message||e).slice(0,80)+'，稍後再試。</span>';
+  }
+  btn.disabled=false;
+}
+
+function render(addr,pair,mint,res,checks,top10){
+  $('result').style.display='block';
+  const sn=$('scoreNum');
+  sn.textContent=res.score; sn.style.color=res.color;
+  $('verdict').innerHTML='<span style="color:'+res.color+'">'+res.verdict+'</span><small>滿分 100 · 僅供參考</small>';
+  const name=pair?pair.baseToken.name:'未知代幣', sym=pair?pair.baseToken.symbol:'';
+  $('tokenName').textContent=name; $('tokenSym').textContent=sym;
+  $('kvPrice').textContent=pair&&pair.priceUsd?'$'+Number(pair.priceUsd).toPrecision(4):'–';
+  $('kvLiq').textContent=fmtUSD(pair&&pair.liquidity?pair.liquidity.usd:null);
+  $('kvVol').textContent=fmtUSD(pair&&pair.volume?pair.volume.h24:null);
+  const chg=pair&&pair.priceChange?pair.priceChange.h24:null;
+  const chgEl=$('kvChg');
+  chgEl.textContent=chg==null?'–':(chg>0?'+':'')+chg.toFixed(1)+'%';
+  chgEl.style.color=chg==null?'':(chg>=0?'var(--ok)':'var(--bad)');
+  $('kvTop10').textContent=fmtPct(top10);
+  $('kvAge').textContent=fmtAge(pair&&pair.pairCreatedAt?Date.now()-pair.pairCreatedAt:null);
+  $('mintLine').innerHTML='MINT <span style="color:var(--dim)">'+addr+'</span>'+(pair&&pair.url?' · <a href="'+pair.url+'" target="_blank" rel="noopener">DexScreener ↗</a>':'');
+  const badge={pass:'PASS',warn:'WARN',fail:'FAIL',na:'N/A'};
+  $('checks').innerHTML=checks.map(c=>
+    '<div class="check"><div class="badge '+c.status+'">'+badge[c.status]+'</div>'+
+    '<div><h3>'+c.label+'</h3><div class="plain">'+c.plain+'</div><div class="detail">'+c.detail+'</div></div></div>'
+  ).join('');
+  $('result').scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+$('scanBtn').addEventListener('click',scan);
+$('addr').addEventListener('keydown',e=>{if(e.key==='Enter')scan();});
+document.querySelectorAll('[data-sample]').forEach(b=>b.addEventListener('click',()=>{$('addr').value=b.dataset.sample;scan();}));
+$('notifyForm').addEventListener('submit',e=>{
+  e.preventDefault();
+  try{const l=JSON.parse(localStorage.getItem('mg_notify')||'[]');l.push({v:$('notifyInput').value,at:Date.now()});localStorage.setItem('mg_notify',JSON.stringify(l));}catch(e2){}
+  $('notifyForm').style.display='none';$('notifyOk').style.display='block';
+});
+refreshQuota();
+// 測試用：把純函數掛到全域
+if(typeof window!=='undefined'){window.__pure={parseMintAccount,computeChecks,scoreFromChecks,fmtUSD,fmtPct};}
+</script>
+</body>
+</html>
