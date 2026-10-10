@@ -194,6 +194,7 @@ footer .mono{font-family:var(--mono)}
     <details open><summary>高分就保證不會被騙嗎？</summary><p>不保證。分數只看鏈上結構風險，看不到莊家的人心。80 分以上的幣也會跌，40 分以下的土狗偶爾也會飆 —— 只是從機率上，前者活下來的機會大得多。這個工具是幫你避雷，不是幫你找百倍幣。</p></details>
     <details><summary>為什麼有些幣查不到價格和流動性？</summary><p>代表它還沒有上任何去中心化交易所的池子，或池子已經死了。這種幣你連賣都賣不掉，分數會直接反應這件事。</p></details>
     <details><summary>你們會拿到我的錢包資料嗎？</summary><p>不會。這個工具不連錢包、不要求授權，只讀 Solana 公開鏈上資料。你的私鑰永遠不需要離開你的錢包。</p></details>
+    <details><summary>掃出「假幣警報」是什麼意思？</summary><p>代表這個地址根本不是真正的 Solana 代幣 —— 它的發行程序是仿冒官方程序的假程序（地址前半一樣、後半被掉包）。這是詐騙最常見的手法：用跟真幣同名的假幣騙你買。看到這個警報千萬不要買，請去官方網站或官方 Twitter 核對正確的合約地址。</p></details>
     <details><summary>免費額度用完怎麼辦？</summary><p>每天 10 次免費掃描，午夜重置。Pro 版（無限掃描＋LINE 即時新幣警報）正在準備中，可以先在下面留下聯絡方式。</p></details>
   </section>
 
@@ -358,6 +359,13 @@ async function scan(){
       throw new Error('NOT_FOUND');
     }
     if(!apiRes.ok){throw new Error('RPC_FAIL');}
+    if(data.fakeToken){
+      renderFake(addr,data);
+      q.used++; setQuota(q); refreshQuota();
+      st.innerHTML='<span style="color:var(--bad)">⚠️ 偵測到假幣，已擋下</span>';
+      btn.disabled=false;
+      return;
+    }
     step('計算風險分數…');
     const mkt=data.market||{}, oc=data.onchain||{};
     const checks=computeChecks({
@@ -380,6 +388,26 @@ async function scan(){
     else st.innerHTML='<span style="color:var(--bad)">✕ 掃描失敗：'+String(e.message||e).slice(0,80)+'，稍後再試。</span>';
   }
   btn.disabled=false;
+}
+
+function renderFake(addr,data){
+  $('result').style.display='block';
+  const sn=$('scoreNum');
+  sn.textContent='0'; sn.style.color='var(--bad)';
+  const mkt=data.market||{};
+  $('verdict').innerHTML='<span style="color:var(--bad)">⚠️ 假幣警報</span><small>這不是真正的 Solana 代幣</small>';
+  $('tokenName').textContent=(mkt.name||'未知代幣')+'（假冒）'; $('tokenSym').textContent=mkt.symbol||'';
+  $('kvPrice').textContent='–'; $('kvLiq').textContent='–'; $('kvVol').textContent='–';
+  const chgEl=$('kvChg'); chgEl.textContent='–'; chgEl.style.color='';
+  $('kvTop10').textContent='–'; $('kvAge').textContent='–';
+  $('mintLine').innerHTML='MINT <span style="color:var(--dim)">'+addr+'</span>';
+  $('checks').innerHTML=
+    '<div class="check" style="border-color:var(--bad)"><div class="badge fail">FAIL</div><div>'+
+    '<h3>發行程序驗證</h3>'+
+    '<div class="plain">這個地址根本不是真正的 Solana 代幣。真的代幣只能由兩個官方程序發行，而它的發行程序是<b>仿冒的</b> —— 地址前半跟官方一模一樣、後半被掉包，就是要騙你看不出來。<b style="color:var(--bad)">千萬不要買這個地址的幣，錢拿不回來。</b>如果你是在社群或朋友那裡拿到這個地址，請去官方網站／官方 Twitter 核對正確的合約地址。</div>'+
+    '<div class="detail">FAKE PROGRAM:<br>'+data.fakeOwner+'<br>REAL TOKEN-2022:<br>TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnXxV69U8Qprfz</div>'+
+    '</div></div>';
+  $('result').scrollIntoView({behavior:'smooth',block:'start'});
 }
 
 function render(addr,data,res,checks){

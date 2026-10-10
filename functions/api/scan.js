@@ -9,11 +9,31 @@ const RPCS = [
 const DS = 'https://api.dexscreener.com/tokens/v1/solana/';
 const CACHE_TTL = 90;
 
+const TOKEN_KEG = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
+const TOKEN_2022 = 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnXxV69U8Qprfz';
+
 const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), {
     status,
     headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' },
   });
+
+function extractMarket(dsRes) {
+  if (!Array.isArray(dsRes) || !dsRes.length) return null;
+  const p = dsRes
+    .slice()
+    .sort((a, b) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0))[0];
+  return {
+    name: p.baseToken?.name || null,
+    symbol: p.baseToken?.symbol || null,
+    priceUsd: p.priceUsd ? Number(p.priceUsd) : null,
+    liquidityUsd: p.liquidity?.usd ?? null,
+    volume24h: p.volume?.h24 ?? null,
+    priceChange24h: p.priceChange?.h24 ?? null,
+    pairAgeMs: p.pairCreatedAt ? Date.now() - p.pairCreatedAt : null,
+    url: p.url || null,
+  };
+}
 
 async function rpcCall(url, method, params) {
   const r = await fetch(url, {
@@ -67,33 +87,15 @@ async function doScan(mint) {
     throw e;
   }
   const owner = accRes.value.owner;
-  if (
-    owner !== 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' &&
-    owner !== 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnXxV69U8Qprfz'
-  ) {
-    const e = new Error('NOT_TOKEN');
-    e.status = 404;
-    throw e;
+  if (owner !== TOKEN_KEG && owner !== TOKEN_2022) {
+    // 假幣：發行程序是仿冒的。回 200 讓前端渲染紅色警報（附市場資料供比對）。
+    // 這種情況不快取，每次都重新驗證。
+    return { mint, fakeToken: true, fakeOwner: owner, market: extractMarket(dsRes) };
   }
 
   const mintInfo = parseMintAccount(accRes.value.data[0]);
 
-  let market = null;
-  if (Array.isArray(dsRes) && dsRes.length) {
-    const p = dsRes
-      .slice()
-      .sort((a, b) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0))[0];
-    market = {
-      name: p.baseToken?.name || null,
-      symbol: p.baseToken?.symbol || null,
-      priceUsd: p.priceUsd ? Number(p.priceUsd) : null,
-      liquidityUsd: p.liquidity?.usd ?? null,
-      volume24h: p.volume?.h24 ?? null,
-      priceChange24h: p.priceChange?.h24 ?? null,
-      pairAgeMs: p.pairCreatedAt ? Date.now() - p.pairCreatedAt : null,
-      url: p.url || null,
-    };
-  }
+  const market = extractMarket(dsRes);
 
   let top10Ratio = null;
   try {
@@ -143,6 +145,10 @@ export async function onRequest(context) {
 
   try {
     const data = await doScan(mint);
+    if (data.fakeToken) {
+      // 假幣不快取，每次都重新驗證
+      return json(data);
+    }
     data.cached = false;
     context.waitUntil(
       cache.put(
