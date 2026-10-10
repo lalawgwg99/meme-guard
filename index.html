@@ -326,8 +326,7 @@ function scoreFromChecks(checks){
 
 /* ═══════════ UI 邏輯 ═══════════ */
 const $=id=>document.getElementById(id);
-const RPC='https://api.mainnet-beta.solana.com';
-const DS='https://api.dexscreener.com/tokens/v1/solana/';
+/* 資料走同網域 Pages Function /api/scan（機房端抓鏈上資料＋快取＋多節點備援） */
 
 function getQuota(){
   const k='mg_quota', t=new Date().toISOString().slice(0,10);
@@ -338,17 +337,6 @@ function getQuota(){
 function setQuota(o){ try{localStorage.setItem('mg_quota',JSON.stringify(o));}catch(e){} }
 function refreshQuota(){$('quotaNum').textContent=10-getQuota().used;}
 
-async function rpc(method,params){
-  const r=await fetch(RPC,{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
-  const j=await r.json();
-  if(j.error) throw new Error(j.error.message);
-  return j.result;
-}
-/* 非關鍵資料：失敗回 null，掃描降級顯示 N/A 不炸 */
-async function rpcSoft(method,params){
-  try{return await rpc(method,params);}catch(e){return null;}
-}
 function validAddr(a){return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(a.trim());}
 
 async function scan(){
@@ -361,80 +349,57 @@ async function scan(){
   btn.disabled=true;
   const step=t=>{st.innerHTML='<span class="blink">▸</span> '+t;};
   try{
-    step('讀取市場資料…');
-    const dsRes=await fetch(DS+addr).then(r=>r.ok?r.json():[]).catch(()=>[]);
-    step('讀取代幣帳戶…');
-    let accRes=null, accFail=false;
-    try{ accRes=await rpc('getAccountInfo',[addr,{encoding:'base64'}]); }
-    catch(e){
-      // 公開 RPC 常 429，隔 1.5 秒重試一次；還是失敗就是節點問題，不是幣不存在
-      await new Promise(r=>setTimeout(r,1500));
-      try{ accRes=await rpc('getAccountInfo',[addr,{encoding:'base64'}]); }
-      catch(e2){ accFail=true; }
+    step('掃描中…');
+    const apiRes=await fetch('/api/scan?mint='+encodeURIComponent(addr));
+    const data=await apiRes.json().catch(()=>({}));
+    if(data.error==='INVALID_ADDR'){throw new Error('INVALID');}
+    if(apiRes.status===404){
+      if(data.error==='NOT_TOKEN') throw new Error('NOT_TOKEN');
+      throw new Error('NOT_FOUND');
     }
-    if(accFail){throw new Error('RPC_FAIL');}
-    if(!accRes||!accRes.value){throw new Error('NOT_FOUND');}
-    const owner=accRes.value.owner;
-    if(owner!=='TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'&&owner!=='TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnXxV69U8Qprfz'){throw new Error('NOT_TOKEN');}
-    step('解析鑄造權 / 凍結權…');
-    const mint=parseMintAccount(accRes.value.data[0]);
-    // DexScreener：取流動性最高的池子
-    let pair=null;
-    if(Array.isArray(dsRes)&&dsRes.length){
-      pair=dsRes.slice().sort((a,b)=>((b.liquidity&&b.liquidity.usd)||0)-((a.liquidity&&a.liquidity.usd)||0))[0];
-    }
-    // 前十大集中度（公開 RPC 常限流，讀不到就標 N/A）
-    step('讀取持倉分布…');
-    const supRes=await rpcSoft('getTokenSupply',[addr]);
-    const largeRes=await rpcSoft('getTokenLargestAccounts',[addr,{commitment:'confirmed'}]);
-    let top10=null;
-    if(supRes&&supRes.value&&largeRes&&largeRes.value){
-      const dec=supRes.value.decimals;
-      const total=Number(supRes.value.amount)/Math.pow(10,dec);
-      const top=largeRes.value.slice(0,10).reduce((s,x)=>s+Number(x.amount)/Math.pow(10,x.decimals),0);
-      if(total>0) top10=top/total;
-    }
+    if(!apiRes.ok){throw new Error('RPC_FAIL');}
     step('計算風險分數…');
+    const mkt=data.market||{}, oc=data.onchain||{};
     const checks=computeChecks({
-      mintAuth:mint.mintAuth===null?null:(mint.mintAuth===undefined?undefined:'active'),
-      freezeAuth:mint.freezeAuth===null?null:(mint.freezeAuth===undefined?undefined:'active'),
-      top10Ratio:top10,
-      liquidity:pair&&pair.liquidity?pair.liquidity.usd:null,
-      volume24h:pair&&pair.volume?pair.volume.h24:null,
-      priceChg24h:pair&&pair.priceChange?pair.priceChange.h24:null,
-      pairAgeMs:pair&&pair.pairCreatedAt?Date.now()-pair.pairCreatedAt:null,
+      mintAuth:oc.mintAuthorityRevoked?null:'active',
+      freezeAuth:oc.freezeAuthorityRevoked?null:'active',
+      top10Ratio:(oc.top10Ratio==null?null:oc.top10Ratio),
+      liquidity:(mkt.liquidityUsd==null?null:mkt.liquidityUsd),
+      volume24h:(mkt.volume24h==null?null:mkt.volume24h),
+      priceChg24h:(mkt.priceChange24h==null?null:mkt.priceChange24h),
+      pairAgeMs:(mkt.pairAgeMs==null?null:mkt.pairAgeMs),
     });
-    // 注意：parseMintAccount 回傳 null=已放棄；這裡轉成 computeChecks 要的格式
     const res=scoreFromChecks(checks);
-    render(addr,pair,mint,res,checks,top10);
+    render(addr,data,res,checks);
     q.used++; setQuota(q); refreshQuota();
     st.innerHTML='<span style="color:var(--ok)">✓ 掃描完成</span>';
   }catch(e){
-    if(e.message==='NOT_FOUND') st.innerHTML='<span style="color:var(--bad)">✕ 主網上查無此代幣。地址貼錯了嗎？</span>';
-    else if(e.message==='RPC_FAIL') st.innerHTML='<span style="color:var(--warn)">✕ 節點忙碌中讀取失敗（不是你的問題），等幾秒再按一次掃描。</span>';
+    if(e.message==='INVALID'||e.message==='NOT_FOUND') st.innerHTML='<span style="color:var(--bad)">✕ 主網上查無此代幣。地址貼錯了嗎？</span>';
     else if(e.message==='NOT_TOKEN') st.innerHTML='<span style="color:var(--bad)">✕ 這個地址不是代幣合約，是其他類型的帳戶。</span>';
+    else if(e.message==='RPC_FAIL') st.innerHTML='<span style="color:var(--warn)">✕ 上游節點忙碌中讀取失敗，等幾秒再按一次掃描。</span>';
     else st.innerHTML='<span style="color:var(--bad)">✕ 掃描失敗：'+String(e.message||e).slice(0,80)+'，稍後再試。</span>';
   }
   btn.disabled=false;
 }
 
-function render(addr,pair,mint,res,checks,top10){
+function render(addr,data,res,checks){
   $('result').style.display='block';
   const sn=$('scoreNum');
   sn.textContent=res.score; sn.style.color=res.color;
   $('verdict').innerHTML='<span style="color:'+res.color+'">'+res.verdict+'</span><small>滿分 100 · 僅供參考</small>';
-  const name=pair?pair.baseToken.name:'未知代幣', sym=pair?pair.baseToken.symbol:'';
+  const mkt=data.market||{}, oc=data.onchain||{};
+  const name=mkt.name||'未知代幣', sym=mkt.symbol||'';
   $('tokenName').textContent=name; $('tokenSym').textContent=sym;
-  $('kvPrice').textContent=pair&&pair.priceUsd?'$'+Number(pair.priceUsd).toPrecision(4):'–';
-  $('kvLiq').textContent=fmtUSD(pair&&pair.liquidity?pair.liquidity.usd:null);
-  $('kvVol').textContent=fmtUSD(pair&&pair.volume?pair.volume.h24:null);
-  const chg=pair&&pair.priceChange?pair.priceChange.h24:null;
+  $('kvPrice').textContent=(mkt.priceUsd==null?'–':'$'+Number(mkt.priceUsd).toPrecision(4));
+  $('kvLiq').textContent=fmtUSD(mkt.liquidityUsd==null?null:mkt.liquidityUsd);
+  $('kvVol').textContent=fmtUSD(mkt.volume24h==null?null:mkt.volume24h);
+  const chg=mkt.priceChange24h;
   const chgEl=$('kvChg');
-  chgEl.textContent=chg==null?'–':(chg>0?'+':'')+chg.toFixed(1)+'%';
-  chgEl.style.color=chg==null?'':(chg>=0?'var(--ok)':'var(--bad)');
-  $('kvTop10').textContent=fmtPct(top10);
-  $('kvAge').textContent=fmtAge(pair&&pair.pairCreatedAt?Date.now()-pair.pairCreatedAt:null);
-  $('mintLine').innerHTML='MINT <span style="color:var(--dim)">'+addr+'</span>'+(pair&&pair.url?' · <a href="'+pair.url+'" target="_blank" rel="noopener">DexScreener ↗</a>':'');
+  chgEl.textContent=(chg==null?'–':(chg>0?'+':'')+Number(chg).toFixed(1)+'%');
+  chgEl.style.color=(chg==null?'':(chg>=0?'var(--ok)':'var(--bad)'));
+  $('kvTop10').textContent=fmtPct(oc.top10Ratio==null?null:oc.top10Ratio);
+  $('kvAge').textContent=fmtAge(mkt.pairAgeMs==null?null:mkt.pairAgeMs);
+  $('mintLine').innerHTML='MINT <span style="color:var(--dim)">'+addr+'</span>'+(mkt.url?' · <a href="'+mkt.url+'" target="_blank" rel="noopener">DexScreener ↗</a>':'')+(data.cached?' · <span style="color:var(--faint)">⚡快取</span>':'');
   const badge={pass:'PASS',warn:'WARN',fail:'FAIL',na:'N/A'};
   $('checks').innerHTML=checks.map(c=>
     '<div class="check"><div class="badge '+c.status+'">'+badge[c.status]+'</div>'+

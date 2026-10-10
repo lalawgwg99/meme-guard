@@ -17,8 +17,10 @@ Solana 迷因幣風險掃描器（繁體中文）。
 
 ## 技術
 
-- 純靜態單頁（`index.html`），無後端、無 key
-- 資料源：DexScreener 免費 API＋Solana 公開 RPC（瀏覽器直連）
+- 前端：純靜態單頁（`index.html`），不連錢包、不碰私鑰
+- 後端：`functions/api/scan.js`（Cloudflare Pages Functions，同網域 API）
+  - 瀏覽器只打一次同網域 API；機房端抓 DexScreener＋Solana RPC
+  - 多 RPC 節點備援（mainnet-beta＋publicnode）＋90 秒快取，手機門號 IP 不再被限流
 - 部署：Cloudflare Pages（GitHub main 自動部署）→ https://meme-guard.pages.dev
 
 ## 商業模式（規劃中）
