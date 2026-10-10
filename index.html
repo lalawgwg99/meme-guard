@@ -364,7 +364,15 @@ async function scan(){
     step('讀取市場資料…');
     const dsRes=await fetch(DS+addr).then(r=>r.ok?r.json():[]).catch(()=>[]);
     step('讀取代幣帳戶…');
-    const accRes=await rpc('getAccountInfo',[addr,{encoding:'base64'}]).catch(()=>null);
+    let accRes=null, accFail=false;
+    try{ accRes=await rpc('getAccountInfo',[addr,{encoding:'base64'}]); }
+    catch(e){
+      // 公開 RPC 常 429，隔 1.5 秒重試一次；還是失敗就是節點問題，不是幣不存在
+      await new Promise(r=>setTimeout(r,1500));
+      try{ accRes=await rpc('getAccountInfo',[addr,{encoding:'base64'}]); }
+      catch(e2){ accFail=true; }
+    }
+    if(accFail){throw new Error('RPC_FAIL');}
     if(!accRes||!accRes.value){throw new Error('NOT_FOUND');}
     const owner=accRes.value.owner;
     if(owner!=='TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'&&owner!=='TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnXxV69U8Qprfz'){throw new Error('NOT_TOKEN');}
@@ -403,6 +411,7 @@ async function scan(){
     st.innerHTML='<span style="color:var(--ok)">✓ 掃描完成</span>';
   }catch(e){
     if(e.message==='NOT_FOUND') st.innerHTML='<span style="color:var(--bad)">✕ 主網上查無此代幣。地址貼錯了嗎？</span>';
+    else if(e.message==='RPC_FAIL') st.innerHTML='<span style="color:var(--warn)">✕ 節點忙碌中讀取失敗（不是你的問題），等幾秒再按一次掃描。</span>';
     else if(e.message==='NOT_TOKEN') st.innerHTML='<span style="color:var(--bad)">✕ 這個地址不是代幣合約，是其他類型的帳戶。</span>';
     else st.innerHTML='<span style="color:var(--bad)">✕ 掃描失敗：'+String(e.message||e).slice(0,80)+'，稍後再試。</span>';
   }
